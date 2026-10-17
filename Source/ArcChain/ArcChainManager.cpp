@@ -1,7 +1,7 @@
 #include "ArcChainManager.h"
 
 #include "ArcConductor.h"
-#include "Components/LineBatchComponent.h"
+#include "ArcLightningComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 
@@ -10,9 +10,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogArcChain, Log, All);
 AArcChainManager::AArcChainManager()
 {
 	PrimaryActorTick.bCanEverTick = false;
-	DebugLines = CreateDefaultSubobject<ULineBatchComponent>(TEXT("DebugLines"));
-	SetRootComponent(DebugLines);
-	DebugLines->SetComponentTickEnabled(false);
+	LightningVisuals = CreateDefaultSubobject<UArcLightningComponent>(TEXT("LightningVisuals"));
+	SetRootComponent(LightningVisuals);
 }
 
 void AArcChainManager::StartChain(AArcConductor* SelectedNode)
@@ -25,7 +24,7 @@ void AArcChainManager::StartChain(AArcConductor* SelectedNode)
 	}
 
 	StopPropagation();
-	DebugLines->Flush();
+	LightningVisuals->ClearArcs();
 	Conductors.Reset();
 	VisitedNodes.Reset();
 	CurrentNode.Reset();
@@ -92,9 +91,7 @@ void AArcChainManager::PropagateNextJump()
 	VisitedNodes.Add(TWeakObjectPtr<AArcConductor>(Target));
 	CurrentNode = Target;
 	++CompletedJumps;
-	DebugLines->DrawLine(From->GetActorLocation(), Target->GetActorLocation(),
-		FLinearColor::Blue, 0, 3.0f, -1.0f);
-	DebugLines->UpdateBounds();
+	LightningVisuals->AddArc(From, Target);
 	UE_LOG(LogArcChain, Log, TEXT("Jump %d: %s -> %s"), CompletedJumps,
 		*GetNameSafe(From), *GetNameSafe(Target));
 
@@ -112,6 +109,6 @@ void AArcChainManager::StopPropagation()
 void AArcChainManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopPropagation();
-	DebugLines->Flush();
+	LightningVisuals->ClearArcs();
 	Super::EndPlay(EndPlayReason);
 }

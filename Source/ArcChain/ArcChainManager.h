@@ -6,7 +6,7 @@
 #include "ArcChainManager.generated.h"
 
 class AArcConductor;
-class ULineBatchComponent;
+class UArcLightningComponent;
 
 UCLASS()
 class ARCCHAIN_API AArcChainManager : public AActor
@@ -27,8 +27,8 @@ private:
 	UPROPERTY(EditInstanceOnly, Category = "Chain Lightning")
 	TObjectPtr<AArcConductor> StartNode;
 
-	UPROPERTY()
-	TObjectPtr<ULineBatchComponent> DebugLines;
+	UPROPERTY(VisibleAnywhere, Category = "Chain Lightning")
+	TObjectPtr<UArcLightningComponent> LightningVisuals;
 
 	UPROPERTY(EditAnywhere, Category = "Chain Lightning", meta = (ClampMin = "0.0", Units = "cm"))
 	float JumpRadius = 500.0f;
