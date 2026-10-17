@@ -6,6 +6,7 @@
 #include "ArcChainManager.generated.h"
 
 class AArcConductor;
+class ULineBatchComponent;
 
 UCLASS()
 class ARCCHAIN_API AArcChainManager : public AActor
@@ -15,13 +16,19 @@ class ARCCHAIN_API AArcChainManager : public AActor
 public:
 	AArcChainManager();
 
+	// Invalid selections leave the current chain untouched.
+	UFUNCTION(BlueprintCallable, Category = "Chain Lightning")
+	void StartChain(AArcConductor* SelectedNode);
+
 protected:
-	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	UPROPERTY(EditInstanceOnly, Category = "Chain Lightning")
 	TObjectPtr<AArcConductor> StartNode;
+
+	UPROPERTY()
+	TObjectPtr<ULineBatchComponent> DebugLines;
 
 	UPROPERTY(EditAnywhere, Category = "Chain Lightning", meta = (ClampMin = "0.0", Units = "cm"))
 	float JumpRadius = 500.0f;

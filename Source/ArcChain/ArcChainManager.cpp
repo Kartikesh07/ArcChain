@@ -1,7 +1,7 @@
 #include "ArcChainManager.h"
 
 #include "ArcConductor.h"
-#include "DrawDebugHelpers.h"
+#include "Components/LineBatchComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 
@@ -10,20 +10,36 @@ DEFINE_LOG_CATEGORY_STATIC(LogArcChain, Log, All);
 AArcChainManager::AArcChainManager()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	DebugLines = CreateDefaultSubobject<ULineBatchComponent>(TEXT("DebugLines"));
+	SetRootComponent(DebugLines);
+	DebugLines->SetComponentTickEnabled(false);
 }
 
-void AArcChainManager::BeginPlay()
+void AArcChainManager::StartChain(AArcConductor* SelectedNode)
 {
-	Super::BeginPlay();
+	if (!HasActorBegunPlay() || IsActorBeingDestroyed() || !IsValid(SelectedNode)
+		|| SelectedNode->IsActorBeingDestroyed() || SelectedNode->GetWorld() != GetWorld()
+		|| !SelectedNode->IsConductive())
+	{
+		return;
+	}
 
-	if (!IsValid(StartNode) || !StartNode->IsConductive() || MaxJumps <= 0
+	StopPropagation();
+	DebugLines->Flush();
+	Conductors.Reset();
+	VisitedNodes.Reset();
+	CurrentNode.Reset();
+	CompletedJumps = 0;
+	StartNode = SelectedNode;
+
+	if (MaxJumps <= 0
 		|| !FMath::IsFinite(JumpRadius) || JumpRadius <= 0.0f
 		|| !FMath::IsFinite(JumpInterval) || JumpInterval <= 0.0f)
 	{
 		return;
 	}
 
-	// Snapshot once; weak references allow conductors to be destroyed safely.
+	// Refresh for each chain, including conductors spawned since the last selection.
 	for (TActorIterator<AArcConductor> It(GetWorld()); It; ++It)
 	{
 		Conductors.Add(*It);
@@ -76,8 +92,9 @@ void AArcChainManager::PropagateNextJump()
 	VisitedNodes.Add(TWeakObjectPtr<AArcConductor>(Target));
 	CurrentNode = Target;
 	++CompletedJumps;
-	DrawDebugLine(GetWorld(), From->GetActorLocation(), Target->GetActorLocation(),
-		FColor::Blue, true, -1.0f, 0, 3.0f);
+	DebugLines->DrawLine(From->GetActorLocation(), Target->GetActorLocation(),
+		FLinearColor::Blue, 0, 3.0f, -1.0f);
+	DebugLines->UpdateBounds();
 	UE_LOG(LogArcChain, Log, TEXT("Jump %d: %s -> %s"), CompletedJumps,
 		*GetNameSafe(From), *GetNameSafe(Target));
 
@@ -95,5 +112,6 @@ void AArcChainManager::StopPropagation()
 void AArcChainManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopPropagation();
+	DebugLines->Flush();
 	Super::EndPlay(EndPlayReason);
 }
