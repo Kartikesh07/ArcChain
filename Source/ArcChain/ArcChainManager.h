@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Queue.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
 #include "ArcChainManager.generated.h"
@@ -33,12 +34,18 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Chain Lightning", meta = (ClampMin = "0.0", Units = "cm"))
 	float JumpRadius = 500.0f;
 
-	// Number of connections, excluding the starting node.
+	// Total connections across all branches, excluding the starting node.
 	UPROPERTY(EditAnywhere, Category = "Chain Lightning", meta = (ClampMin = "0"))
 	int32 MaxJumps = 10;
 
 	UPROPERTY(EditAnywhere, Category = "Chain Lightning", meta = (ClampMin = "0.01", Units = "s"))
 	float JumpInterval = 0.25f;
+
+	UPROPERTY(EditAnywhere, Category = "Chain Lightning")
+	bool bEnableBranching = true;
+
+	UPROPERTY(EditAnywhere, Category = "Chain Lightning", meta = (ClampMin = "1", EditCondition = "bEnableBranching"))
+	int32 MaxBranchesPerNode = 2;
 
 	void PropagateNextJump();
 	void StopPropagation();
@@ -47,7 +54,8 @@ private:
 
 	TArray<TWeakObjectPtr<AArcConductor>> Conductors;
 	TSet<TWeakObjectPtr<AArcConductor>> VisitedNodes;
-	TWeakObjectPtr<AArcConductor> CurrentNode;
+	TQueue<TWeakObjectPtr<AArcConductor>> PendingNodes;
+	int32 PendingNodeCount = 0;
 	FTimerHandle JumpTimer;
 	int32 CompletedJumps = 0;
 };

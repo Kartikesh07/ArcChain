@@ -28,11 +28,9 @@ void AArcChainManager::StartChain(AArcConductor* SelectedNode)
 	ResetImpactFeedback();
 	Conductors.Reset();
 	VisitedNodes.Reset();
-	CurrentNode.Reset();
 	CompletedJumps = 0;
 	StartNode = SelectedNode;
-	CurrentNode = SelectedNode;
-	VisitedNodes.Add(CurrentNode);
+	VisitedNodes.Add(TWeakObjectPtr<AArcConductor>(SelectedNode));
 	SelectedNode->PulseGlow();
 
 	if (MaxJumps <= 0
@@ -48,6 +46,8 @@ void AArcChainManager::StartChain(AArcConductor* SelectedNode)
 		Conductors.Add(*It);
 	}
 
+	PendingNodes.Enqueue(TWeakObjectPtr<AArcConductor>(SelectedNode));
+	PendingNodeCount = 1;
 	GetWorldTimerManager().SetTimer(JumpTimer, this,
 		&AArcChainManager::PropagateNextJump, JumpInterval, true);
 }
@@ -77,29 +77,52 @@ AArcConductor* AArcChainManager::FindNearestTarget(const AArcConductor& From) co
 
 void AArcChainManager::PropagateNextJump()
 {
-	AArcConductor* From = CurrentNode.Get();
-	if (!IsValid(From) || From->IsActorBeingDestroyed() || !From->IsConductive() || CompletedJumps >= MaxJumps)
+	if (CompletedJumps >= MaxJumps || PendingNodes.IsEmpty())
 	{
 		StopPropagation();
 		return;
 	}
 
-	AArcConductor* Target = FindNearestTarget(*From);
-	if (!Target)
+	const int32 BranchLimit = bEnableBranching ? FMath::Max(1, MaxBranchesPerNode) : 1;
+	// Process only the current frontier. Newly struck nodes wait until the next interval.
+	const int32 FrontierSize = PendingNodeCount;
+	for (int32 NodeIndex = 0; NodeIndex < FrontierSize && CompletedJumps < MaxJumps; ++NodeIndex)
 	{
-		StopPropagation();
-		return;
+		TWeakObjectPtr<AArcConductor> QueuedNode;
+		if (!PendingNodes.Dequeue(QueuedNode))
+		{
+			break;
+		}
+		--PendingNodeCount;
+		AArcConductor* From = QueuedNode.Get();
+		if (!IsValid(From) || From->IsActorBeingDestroyed() || !From->IsConductive())
+		{
+			// Losing one branch must not cancel other queued branches.
+			continue;
+		}
+
+		for (int32 BranchIndex = 0; BranchIndex < BranchLimit && CompletedJumps < MaxJumps; ++BranchIndex)
+		{
+			AArcConductor* Target = FindNearestTarget(*From);
+			if (!Target)
+			{
+				break;
+			}
+
+			// Claim immediately so no other parent can strike or enqueue this target again.
+			const TWeakObjectPtr<AArcConductor> TargetNode(Target);
+			VisitedNodes.Add(TargetNode);
+			PendingNodes.Enqueue(TargetNode);
+			++PendingNodeCount;
+			++CompletedJumps;
+			LightningVisuals->AddArc(From, Target);
+			Target->PlayImpactFeedback(From->GetActorLocation());
+			UE_LOG(LogArcChain, Log, TEXT("Jump %d: %s -> %s"), CompletedJumps,
+				*GetNameSafe(From), *GetNameSafe(Target));
+		}
 	}
 
-	VisitedNodes.Add(TWeakObjectPtr<AArcConductor>(Target));
-	CurrentNode = Target;
-	++CompletedJumps;
-	LightningVisuals->AddArc(From, Target);
-	Target->PlayImpactFeedback(From->GetActorLocation());
-	UE_LOG(LogArcChain, Log, TEXT("Jump %d: %s -> %s"), CompletedJumps,
-		*GetNameSafe(From), *GetNameSafe(Target));
-
-	if (CompletedJumps >= MaxJumps)
+	if (CompletedJumps >= MaxJumps || PendingNodes.IsEmpty())
 	{
 		StopPropagation();
 	}
@@ -108,6 +131,8 @@ void AArcChainManager::PropagateNextJump()
 void AArcChainManager::StopPropagation()
 {
 	GetWorldTimerManager().ClearTimer(JumpTimer);
+	PendingNodes.Empty();
+	PendingNodeCount = 0;
 }
 
 void AArcChainManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
