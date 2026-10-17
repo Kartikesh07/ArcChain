@@ -5,6 +5,7 @@
 #include "ArcPlayerController.generated.h"
 
 class AArcChainManager;
+class UArcShowcaseControls;
 
 UCLASS()
 class ARCCHAIN_API AArcPlayerController : public APlayerController
@@ -14,9 +15,14 @@ class ARCCHAIN_API AArcPlayerController : public APlayerController
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	void HandleSelectConductor();
+	AArcChainManager* ResolveChainManager();
 
 	TWeakObjectPtr<AArcChainManager> ChainManager;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UArcShowcaseControls> ShowcaseControls;
 };

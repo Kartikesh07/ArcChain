@@ -23,20 +23,20 @@ void AArcChainManager::StartChain(AArcConductor* SelectedNode)
 		return;
 	}
 
-	StopPropagation();
-	LightningVisuals->ClearArcs();
-	ResetImpactFeedback();
-	Conductors.Reset();
-	VisitedNodes.Reset();
-	CompletedJumps = 0;
+	ResetChain();
 	StartNode = SelectedNode;
 	VisitedNodes.Add(TWeakObjectPtr<AArcConductor>(SelectedNode));
 	SelectedNode->PulseGlow();
+	ActiveJumpRadius = JumpRadius;
+	ActiveMaxJumps = MaxJumps;
+	ActiveBranchLimit = bEnableBranching ? FMath::Clamp(MaxBranchesPerNode, 1, 4) : 1;
 
 	if (MaxJumps <= 0
 		|| !FMath::IsFinite(JumpRadius) || JumpRadius <= 0.0f
 		|| !FMath::IsFinite(JumpInterval) || JumpInterval <= 0.0f)
 	{
+		PropagationStatus = EArcPropagationStatus::Complete;
+		OnStateChanged.Broadcast();
 		return;
 	}
 
@@ -50,12 +50,42 @@ void AArcChainManager::StartChain(AArcConductor* SelectedNode)
 	PendingNodeCount = 1;
 	GetWorldTimerManager().SetTimer(JumpTimer, this,
 		&AArcChainManager::PropagateNextJump, JumpInterval, true);
+	PropagationStatus = EArcPropagationStatus::Active;
+	OnStateChanged.Broadcast();
+}
+
+void AArcChainManager::ConfigureNextChain(bool bBranching, int32 Branches, float Radius, float Interval)
+{
+	if (!FMath::IsFinite(Radius) || !FMath::IsFinite(Interval))
+	{
+		return;
+	}
+	bEnableBranching = bBranching;
+	MaxBranchesPerNode = FMath::Clamp(Branches, 1, 4);
+	JumpRadius = FMath::Clamp(Radius, 50.0f, 3000.0f);
+	JumpInterval = FMath::Clamp(Interval, 0.05f, 2.0f);
+}
+
+void AArcChainManager::ResetChain()
+{
+	StopPropagation();
+	LightningVisuals->ClearArcs();
+	ResetImpactFeedback();
+	Conductors.Reset();
+	VisitedNodes.Reset();
+	StartNode = nullptr;
+	CompletedJumps = 0;
+	ActiveJumpRadius = 0.0f;
+	ActiveMaxJumps = 0;
+	ActiveBranchLimit = 1;
+	PropagationStatus = EArcPropagationStatus::Idle;
+	OnStateChanged.Broadcast();
 }
 
 AArcConductor* AArcChainManager::FindNearestTarget(const AArcConductor& From) const
 {
 	AArcConductor* Nearest = nullptr;
-	double NearestDistanceSquared = FMath::Square(static_cast<double>(JumpRadius));
+	double NearestDistanceSquared = FMath::Square(static_cast<double>(ActiveJumpRadius));
 	for (const TWeakObjectPtr<AArcConductor>& Candidate : Conductors)
 	{
 		AArcConductor* Target = Candidate.Get();
@@ -77,16 +107,17 @@ AArcConductor* AArcChainManager::FindNearestTarget(const AArcConductor& From) co
 
 void AArcChainManager::PropagateNextJump()
 {
-	if (CompletedJumps >= MaxJumps || PendingNodes.IsEmpty())
+	if (CompletedJumps >= ActiveMaxJumps || PendingNodes.IsEmpty())
 	{
 		StopPropagation();
+		PropagationStatus = EArcPropagationStatus::Complete;
+		OnStateChanged.Broadcast();
 		return;
 	}
 
-	const int32 BranchLimit = bEnableBranching ? FMath::Max(1, MaxBranchesPerNode) : 1;
 	// Process only the current frontier. Newly struck nodes wait until the next interval.
 	const int32 FrontierSize = PendingNodeCount;
-	for (int32 NodeIndex = 0; NodeIndex < FrontierSize && CompletedJumps < MaxJumps; ++NodeIndex)
+	for (int32 NodeIndex = 0; NodeIndex < FrontierSize && CompletedJumps < ActiveMaxJumps; ++NodeIndex)
 	{
 		TWeakObjectPtr<AArcConductor> QueuedNode;
 		if (!PendingNodes.Dequeue(QueuedNode))
@@ -101,7 +132,7 @@ void AArcChainManager::PropagateNextJump()
 			continue;
 		}
 
-		for (int32 BranchIndex = 0; BranchIndex < BranchLimit && CompletedJumps < MaxJumps; ++BranchIndex)
+		for (int32 BranchIndex = 0; BranchIndex < ActiveBranchLimit && CompletedJumps < ActiveMaxJumps; ++BranchIndex)
 		{
 			AArcConductor* Target = FindNearestTarget(*From);
 			if (!Target)
@@ -122,10 +153,12 @@ void AArcChainManager::PropagateNextJump()
 		}
 	}
 
-	if (CompletedJumps >= MaxJumps || PendingNodes.IsEmpty())
+	if (CompletedJumps >= ActiveMaxJumps || PendingNodes.IsEmpty())
 	{
 		StopPropagation();
+		PropagationStatus = EArcPropagationStatus::Complete;
 	}
+	OnStateChanged.Broadcast();
 }
 
 void AArcChainManager::StopPropagation()
@@ -137,9 +170,7 @@ void AArcChainManager::StopPropagation()
 
 void AArcChainManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	StopPropagation();
-	LightningVisuals->ClearArcs();
-	ResetImpactFeedback();
+	ResetChain();
 	Super::EndPlay(EndPlayReason);
 }
 

@@ -2,6 +2,7 @@
 
 #include "ArcChainManager.h"
 #include "ArcConductor.h"
+#include "ArcShowcaseControls.h"
 #include "Components/InputComponent.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/World.h"
@@ -18,6 +19,12 @@ void AArcPlayerController::BeginPlay()
 		InputMode.SetHideCursorDuringCapture(false);
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		SetInputMode(InputMode);
+		ShowcaseControls = CreateWidget<UArcShowcaseControls>(this, UArcShowcaseControls::StaticClass());
+		if (ShowcaseControls)
+		{
+			ShowcaseControls->SetChainManager(ResolveChainManager());
+			ShowcaseControls->AddToViewport(10);
+		}
 	}
 }
 
@@ -33,7 +40,7 @@ void AArcPlayerController::SetupInputComponent()
 
 void AArcPlayerController::HandleSelectConductor()
 {
-	if (!IsLocalController())
+	if (!IsLocalController() || (ShowcaseControls && ShowcaseControls->IsPointerOverPanel()))
 	{
 		return;
 	}
@@ -51,6 +58,14 @@ void AArcPlayerController::HandleSelectConductor()
 		return;
 	}
 
+	if (AArcChainManager* Manager = ResolveChainManager())
+	{
+		Manager->StartChain(SelectedNode);
+	}
+}
+
+AArcChainManager* AArcPlayerController::ResolveChainManager()
+{
 	// The level needs one manager; reacquire safely if the cached manager was removed.
 	if (!ChainManager.IsValid() || ChainManager->IsActorBeingDestroyed())
 	{
@@ -60,13 +75,24 @@ void AArcPlayerController::HandleSelectConductor()
 			if (!It->IsActorBeingDestroyed())
 			{
 				ChainManager = *It;
+				if (ShowcaseControls)
+				{
+					ShowcaseControls->SetChainManager(*It);
+				}
 				break;
 			}
 		}
 	}
 
-	if (AArcChainManager* Manager = ChainManager.Get())
+	return ChainManager.Get();
+}
+
+void AArcPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ShowcaseControls)
 	{
-		Manager->StartChain(SelectedNode);
+		ShowcaseControls->RemoveFromParent();
+		ShowcaseControls = nullptr;
 	}
+	Super::EndPlay(EndPlayReason);
 }
