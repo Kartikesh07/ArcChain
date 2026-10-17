@@ -42,6 +42,7 @@ private:
 
 	void PropagateNextJump();
 	void StopPropagation();
+	void ResetImpactFeedback();
 	AArcConductor* FindNearestTarget(const AArcConductor& From) const;
 
 	TArray<TWeakObjectPtr<AArcConductor>> Conductors;

@@ -25,11 +25,15 @@ void AArcChainManager::StartChain(AArcConductor* SelectedNode)
 
 	StopPropagation();
 	LightningVisuals->ClearArcs();
+	ResetImpactFeedback();
 	Conductors.Reset();
 	VisitedNodes.Reset();
 	CurrentNode.Reset();
 	CompletedJumps = 0;
 	StartNode = SelectedNode;
+	CurrentNode = SelectedNode;
+	VisitedNodes.Add(CurrentNode);
+	SelectedNode->PulseGlow();
 
 	if (MaxJumps <= 0
 		|| !FMath::IsFinite(JumpRadius) || JumpRadius <= 0.0f
@@ -44,8 +48,6 @@ void AArcChainManager::StartChain(AArcConductor* SelectedNode)
 		Conductors.Add(*It);
 	}
 
-	CurrentNode = StartNode.Get();
-	VisitedNodes.Add(CurrentNode);
 	GetWorldTimerManager().SetTimer(JumpTimer, this,
 		&AArcChainManager::PropagateNextJump, JumpInterval, true);
 }
@@ -57,7 +59,8 @@ AArcConductor* AArcChainManager::FindNearestTarget(const AArcConductor& From) co
 	for (const TWeakObjectPtr<AArcConductor>& Candidate : Conductors)
 	{
 		AArcConductor* Target = Candidate.Get();
-		if (!IsValid(Target) || !Target->IsConductive() || VisitedNodes.Contains(Candidate))
+		if (!IsValid(Target) || Target->IsActorBeingDestroyed()
+			|| !Target->IsConductive() || VisitedNodes.Contains(Candidate))
 		{
 			continue;
 		}
@@ -75,7 +78,7 @@ AArcConductor* AArcChainManager::FindNearestTarget(const AArcConductor& From) co
 void AArcChainManager::PropagateNextJump()
 {
 	AArcConductor* From = CurrentNode.Get();
-	if (!IsValid(From) || !From->IsConductive() || CompletedJumps >= MaxJumps)
+	if (!IsValid(From) || From->IsActorBeingDestroyed() || !From->IsConductive() || CompletedJumps >= MaxJumps)
 	{
 		StopPropagation();
 		return;
@@ -92,6 +95,7 @@ void AArcChainManager::PropagateNextJump()
 	CurrentNode = Target;
 	++CompletedJumps;
 	LightningVisuals->AddArc(From, Target);
+	Target->PlayImpactFeedback(From->GetActorLocation());
 	UE_LOG(LogArcChain, Log, TEXT("Jump %d: %s -> %s"), CompletedJumps,
 		*GetNameSafe(From), *GetNameSafe(Target));
 
@@ -110,5 +114,17 @@ void AArcChainManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopPropagation();
 	LightningVisuals->ClearArcs();
+	ResetImpactFeedback();
 	Super::EndPlay(EndPlayReason);
+}
+
+void AArcChainManager::ResetImpactFeedback()
+{
+	for (const TWeakObjectPtr<AArcConductor>& Node : VisitedNodes)
+	{
+		if (AArcConductor* Conductor = Node.Get(); IsValid(Conductor) && !Conductor->IsActorBeingDestroyed())
+		{
+			Conductor->ResetImpactFeedback();
+		}
+	}
 }
